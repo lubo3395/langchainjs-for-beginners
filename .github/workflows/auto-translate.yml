@@ -1,0 +1,44 @@
+name: Auto Translate to Chinese
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.md'
+      - '**.ts'
+      - '**.js'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+jobs:
+  translate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install axios
+
+      - name: Run translation script
+        run: node scripts/translate.js
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'docs: add Chinese translations'
+          title: '🌐 Chinese Documentation Translations'
+          body: 'Automated Chinese translations of documentation'
+          branch: translations/zh-CN
