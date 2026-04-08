@@ -41,6 +41,7 @@ jobs:
 
           const AZURE_KEY = process.env.AZURE_TRANSLATOR_KEY;
           const AZURE_ENDPOINT = process.env.AZURE_TRANSLATOR_ENDPOINT;
+          const AZURE_REGION = process.env.AZURE_TRANSLATOR_REGION;
 
           // 本地字典作为备选（如果 API 失败）
           const localTranslationMap = {
@@ -68,6 +69,7 @@ jobs:
                   method: 'POST',
                   headers: {
                     'Ocp-Apim-Subscription-Key': AZURE_KEY,
+                    'Ocp-Apim-Subscription-Region': AZURE_REGION,
                     'Content-Type': 'application/json'
                   }
                 };
@@ -209,6 +211,7 @@ jobs:
         env:
           AZURE_TRANSLATOR_KEY: ${{ secrets.AZURE_TRANSLATOR_KEY }}
           AZURE_TRANSLATOR_ENDPOINT: ${{ secrets.AZURE_TRANSLATOR_ENDPOINT }}
+          AZURE_TRANSLATOR_REGION: 'southeastasia' # 在这里明确指定区域
         run: node scripts/translate.js
 
       - name: Check for generated files
