@@ -35,9 +35,9 @@ jobs:
         run: |
           mkdir -p scripts
           cat > scripts/translate.js << 'EOF'
-          const fs = require('fs');
-          const path = require('path');
-
+          import fs from 'fs';
+          import path from 'path';
+      
           const translationMap = {
             'Welcome': '欢迎',
             'Introduction': '介绍',
@@ -95,35 +95,28 @@ jobs:
             'License': '许可证',
             'Acknowledgments': '致谢',
           };
-
-          function shouldTranslate(word) {
-            return translationMap.hasOwnProperty(word);
-          }
-
+      
           function translateContent(content) {
             let result = content;
-            // 避免翻译代码块内的内容
-            const codeBlockRegex = /```[\s\S]*?```/g;
+            const codeBlockRegex = /\`\`\`[\s\S]*?\`\`\`/g;
             const codeBlocks = [];
             result = result.replace(codeBlockRegex, (match) => {
               codeBlocks.push(match);
               return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
             });
-
-            // 翻译文本
+      
             for (const [eng, chs] of Object.entries(translationMap)) {
               const regex = new RegExp('\\b' + eng + '\\b', 'g');
               result = result.replace(regex, chs);
             }
-
-            // 恢复代码块
+      
             result = result.replace(/__CODE_BLOCK_(\d+)__/g, (match, index) => {
               return codeBlocks[parseInt(index)];
             });
-
+      
             return result;
           }
-
+      
           function processDir(dir) {
             try {
               const files = fs.readdirSync(dir);
@@ -148,7 +141,7 @@ jobs:
               console.error('Error in processDir', dir, err.message);
             }
           }
-
+      
           console.log('🚀 Starting translation...');
           processDir('.');
           console.log('✅ Translation complete!');
