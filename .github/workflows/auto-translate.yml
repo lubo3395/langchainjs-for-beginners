@@ -53,6 +53,9 @@ jobs:
           };
 
           async function translateWithAzure(text) {
+            console.log('Calling Azure Translate...');
+            console.log('Endpoint:', AZURE_ENDPOINT);
+            console.log('Region:', AZURE_REGION);
             return new Promise((resolve, reject) => {
               if (!AZURE_KEY || !AZURE_ENDPOINT) {
                 console.warn('⚠️ Azure credentials not found, using local dictionary');
@@ -79,6 +82,7 @@ jobs:
                   res.on('data', chunk => data += chunk);
                   res.on('end', () => {
                     try {
+                      console.log('Azure raw response:', data);
                       const result = JSON.parse(data);
                       if (result[0] && result[0].translations && result[0].translations[0]) {
                         resolve(result[0].translations[0].text);
@@ -94,7 +98,8 @@ jobs:
 
                 req.on('error', (err) => {
                   console.error('Azure API error:', err.message);
-                  resolve(text);
+                  // resolve(text);
+                  reject(err); // 不要 resolve
                 });
 
                 req.write(body);
@@ -207,6 +212,11 @@ jobs:
           console.log('✅ Translation complete!');
           EOF
 
+      - name: Debug env
+        run: |
+          echo "KEY length: ${#AZURE_TRANSLATOR_KEY}"
+          echo "ENDPOINT: $AZURE_TRANSLATOR_ENDPOINT"
+    
       - name: Run translation script
         env:
           AZURE_TRANSLATOR_KEY: ${{ secrets.AZURE_TRANSLATOR_KEY }}
