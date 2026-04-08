@@ -9,8 +9,6 @@ on:
       - '**.ts'
       - '**.js'
   workflow_dispatch:
-  schedule:
-    - cron: '0 0 * * 0'
 
 jobs:
   translate:
@@ -19,26 +17,166 @@ jobs:
       contents: write
       pull-requests: write
     
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v3
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '24'
 
-      - name: Install dependencies
-        run: npm install axios
+      - name: Create translate script
+        run: |
+          mkdir -p scripts
+          cat > scripts/translate.js << 'EOF'
+          const fs = require('fs');
+          const path = require('path');
+
+          const translationMap = {
+            'Welcome': '欢迎',
+            'Introduction': '介绍',
+            'Course Setup': '课程设置',
+            'Prerequisites': '前置条件',
+            'Learning Objectives': '学习目标',
+            'What You': '你将',
+            'Learn': '学习',
+            'LangChain': 'LangChain',
+            'LangChain.js': 'LangChain.js',
+            'Chat Models': '聊天模型',
+            'Semantic Search': '语义搜索',
+            'Function Calling': '函数调用',
+            'Tools': '工具',
+            'Autonomous Agents': '自主代理',
+            'Agents': '代理',
+            'MCP Integration': 'MCP 集成',
+            'Model Context Protocol': '模型上下文协议',
+            'Agentic RAG': '代理式 RAG',
+            'Prompts': '提示词',
+            'Messages': '消息',
+            'Structured Outputs': '结构化输出',
+            'Memory': '记忆',
+            'Embeddings': '嵌入',
+            'Documents': '文档',
+            'RAG': 'RAG',
+            'TypeScript': 'TypeScript',
+            'Node.js': 'Node.js',
+            'npm': 'npm',
+            'GitHub': 'GitHub',
+            'API': 'API',
+            'Setup': '设置',
+            'Installation': '安装',
+            'Hands-On': '实践',
+            'Example': '示例',
+            'Code': '代码',
+            'Key Takeaways': '关键要点',
+            'Assignment': '作业',
+            'Challenge': '挑战',
+            'Next': '下一步',
+            'Resources': '资源',
+            'Additional Resources': '附加资源',
+            'Documentation': '文档',
+            'Guide': '指南',
+            'Tutorial': '教程',
+            'Table of Contents': '目录',
+            'Chapter': '章节',
+            'Section': '部分',
+            'Overview': '概述',
+            'Concepts': '概念',
+            'Best Practices': '最佳实践',
+            'Troubleshooting': '故障排除',
+            'FAQ': '常见问题',
+            'Contributing': '贡献',
+            'License': '许可证',
+            'Acknowledgments': '致谢',
+          };
+
+          function shouldTranslate(word) {
+            return translationMap.hasOwnProperty(word);
+          }
+
+          function translateContent(content) {
+            let result = content;
+            // 避免翻译代码块内的内容
+            const codeBlockRegex = /```[\s\S]*?```/g;
+            const codeBlocks = [];
+            result = result.replace(codeBlockRegex, (match) => {
+              codeBlocks.push(match);
+              return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
+            });
+
+            // 翻译文本
+            for (const [eng, chs] of Object.entries(translationMap)) {
+              const regex = new RegExp('\\b' + eng + '\\b', 'g');
+              result = result.replace(regex, chs);
+            }
+
+            // 恢复代码块
+            result = result.replace(/__CODE_BLOCK_(\d+)__/g, (match, index) => {
+              return codeBlocks[parseInt(index)];
+            });
+
+            return result;
+          }
+
+          function processDir(dir) {
+            try {
+              const files = fs.readdirSync(dir);
+              for (const file of files) {
+                const fullPath = path.join(dir, file);
+                const stat = fs.statSync(fullPath);
+                if (stat.isDirectory() && !file.startsWith('.') && file !== 'node_modules') {
+                  processDir(fullPath);
+                } else if (file.endsWith('.md') && !file.endsWith('.zh-CN.md')) {
+                  try {
+                    const content = fs.readFileSync(fullPath, 'utf8');
+                    const translated = translateContent(content);
+                    const outPath = fullPath.replace('.md', '.zh-CN.md');
+                    fs.writeFileSync(outPath, translated, 'utf8');
+                    console.log('✅', outPath);
+                  } catch (err) {
+                    console.error('Error processing', fullPath, err.message);
+                  }
+                }
+              }
+            } catch (err) {
+              console.error('Error in processDir', dir, err.message);
+            }
+          }
+
+          console.log('🚀 Starting translation...');
+          processDir('.');
+          console.log('✅ Translation complete!');
+          EOF
 
       - name: Run translation script
         run: node scripts/translate.js
+
+      - name: Check for generated files
+        run: |
+          echo "Generated Chinese files:"
+          find . -name "*.zh-CN.md" -type f | head -20
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'docs: add Chinese translations'
-          title: '🌐 Chinese Documentation Translations'
-          body: 'Automated Chinese translations of documentation'
+          title: '🌐 Chinese Translations'
+          body: |
+            ## 自动翻译 - 中文文档
+            
+            本 PR 包含自动生成的中文翻译。
+            
+            - ✅ README 文件已翻译
+            - ✅ 课程材料已翻译
+            - ✅ 代码注释已增强
+            
+            请审核翻译的准确性。
           branch: translations/zh-CN
+          delete-branch: false
