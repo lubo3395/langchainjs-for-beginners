@@ -31,107 +31,164 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Create translate script
+      - name: Create translate script with Azure API
         run: |
           mkdir -p scripts
           cat > scripts/translate.js << 'EOF'
           import fs from 'fs';
           import path from 'path';
-      
-          const translationMap = {
+          import https from 'https';
+
+          const AZURE_KEY = process.env.AZURE_TRANSLATOR_KEY;
+          const AZURE_ENDPOINT = process.env.AZURE_TRANSLATOR_ENDPOINT;
+
+          // 本地字典作为备选（如果 API 失败）
+          const localTranslationMap = {
             'Welcome': '欢迎',
             'Introduction': '介绍',
             'Course Setup': '课程设置',
-            'Prerequisites': '前置条件',
-            'Learning Objectives': '学习目标',
-            'What You': '你将',
-            'Learn': '学习',
             'LangChain': 'LangChain',
-            'LangChain.js': 'LangChain.js',
             'Chat Models': '聊天模型',
-            'Semantic Search': '语义搜索',
-            'Function Calling': '函数调用',
-            'Tools': '工具',
-            'Autonomous Agents': '自主代理',
-            'Agents': '代理',
-            'MCP Integration': 'MCP 集成',
-            'Model Context Protocol': '模型上下文协议',
-            'Agentic RAG': '代理式 RAG',
-            'Prompts': '提示词',
-            'Messages': '消息',
-            'Structured Outputs': '结构化输出',
-            'Memory': '记忆',
-            'Embeddings': '嵌入',
-            'Documents': '文档',
-            'RAG': 'RAG',
-            'TypeScript': 'TypeScript',
-            'Node.js': 'Node.js',
-            'npm': 'npm',
-            'GitHub': 'GitHub',
-            'API': 'API',
-            'Setup': '设置',
-            'Installation': '安装',
-            'Hands-On': '实践',
-            'Example': '示例',
-            'Code': '代码',
-            'Key Takeaways': '关键要点',
-            'Assignment': '作业',
-            'Challenge': '挑战',
-            'Next': '下一步',
-            'Resources': '资源',
-            'Additional Resources': '附加资源',
-            'Documentation': '文档',
-            'Guide': '指南',
-            'Tutorial': '教程',
-            'Table of Contents': '目录',
-            'Chapter': '章节',
-            'Section': '部分',
-            'Overview': '概述',
-            'Concepts': '概念',
-            'Best Practices': '最佳实践',
-            'Troubleshooting': '故障排除',
-            'FAQ': '常见问题',
-            'Contributing': '贡献',
-            'License': '许可证',
-            'Acknowledgments': '致谢',
           };
-      
-          function translateContent(content) {
+
+          async function translateWithAzure(text) {
+            return new Promise((resolve, reject) => {
+              if (!AZURE_KEY || !AZURE_ENDPOINT) {
+                console.warn('⚠️ Azure credentials not found, using local dictionary');
+                resolve(text);
+                return;
+              }
+
+              try {
+                const body = JSON.stringify([{ Text: text }]);
+                
+                const options = {
+                  hostname: new URL(AZURE_ENDPOINT).hostname,
+                  path: '/translate?api-version=3.0&from=en&to=zh-Hans',
+                  method: 'POST',
+                  headers: {
+                    'Ocp-Apim-Subscription-Key': AZURE_KEY,
+                    'Content-Type': 'application/json'
+                  }
+                };
+
+                const req = https.request(options, (res) => {
+                  let data = '';
+                  res.on('data', chunk => data += chunk);
+                  res.on('end', () => {
+                    try {
+                      const result = JSON.parse(data);
+                      if (result[0] && result[0].translations && result[0].translations[0]) {
+                        resolve(result[0].translations[0].text);
+                      } else {
+                        resolve(text);
+                      }
+                    } catch (err) {
+                      console.error('Failed to parse Azure response:', err.message);
+                      resolve(text);
+                    }
+                  });
+                });
+
+                req.on('error', (err) => {
+                  console.error('Azure API error:', err.message);
+                  resolve(text);
+                });
+
+                req.write(body);
+                req.end();
+              } catch (err) {
+                console.error('Error calling Azure:', err.message);
+                resolve(text);
+              }
+            });
+          }
+
+          function translateWithLocalDict(text) {
+            let result = text;
+            for (const [eng, chs] of Object.entries(localTranslationMap)) {
+              const regex = new RegExp('\\b' + eng + '\\b', 'g');
+              result = result.replace(regex, chs);
+            }
+            return result;
+          }
+
+          async function translateMarkdown(content) {
             let result = content;
+            
+            // 保护代码块
             const codeBlockRegex = /\`\`\`[\s\S]*?\`\`\`/g;
             const codeBlocks = [];
             result = result.replace(codeBlockRegex, (match) => {
               codeBlocks.push(match);
               return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
             });
-      
-            for (const [eng, chs] of Object.entries(translationMap)) {
-              const regex = new RegExp('\\b' + eng + '\\b', 'g');
-              result = result.replace(regex, chs);
+
+            // 保护内联代码
+            const inlineCodeRegex = /\`[^\`]+\`/g;
+            const inlineCodes = [];
+            result = result.replace(inlineCodeRegex, (match) => {
+              inlineCodes.push(match);
+              return `__INLINE_CODE_${inlineCodes.length - 1}__`;
+            });
+
+            // 分段翻译（每段限制长度以避免 API 超时）
+            const paragraphs = result.split('\n\n');
+            const translatedParagraphs = [];
+
+            for (const para of paragraphs) {
+              if (para.trim().length === 0) {
+                translatedParagraphs.push(para);
+                continue;
+              }
+
+              // 尝试使用 Azure API，如果失败则使用本地字典
+              let translated = para;
+              if (AZURE_KEY) {
+                try {
+                  translated = await translateWithAzure(para);
+                } catch (err) {
+                  console.warn('Azure translation failed, using local dictionary:', err.message);
+                  translated = translateWithLocalDict(para);
+                }
+              } else {
+                translated = translateWithLocalDict(para);
+              }
+
+              translatedParagraphs.push(translated);
             }
-      
+
+            result = translatedParagraphs.join('\n\n');
+
+            // 恢复代码块
             result = result.replace(/__CODE_BLOCK_(\d+)__/g, (match, index) => {
               return codeBlocks[parseInt(index)];
             });
-      
+
+            // 恢复内联代码
+            result = result.replace(/__INLINE_CODE_(\d+)__/g, (match, index) => {
+              return inlineCodes[parseInt(index)];
+            });
+
             return result;
           }
-      
-          function processDir(dir) {
+
+          async function processDir(dir) {
             try {
               const files = fs.readdirSync(dir);
               for (const file of files) {
                 const fullPath = path.join(dir, file);
                 const stat = fs.statSync(fullPath);
                 if (stat.isDirectory() && !file.startsWith('.') && file !== 'node_modules') {
-                  processDir(fullPath);
+                  await processDir(fullPath);
                 } else if (file.endsWith('.md') && !file.endsWith('.zh-CN.md')) {
                   try {
+                    console.log('Processing:', fullPath);
                     const content = fs.readFileSync(fullPath, 'utf8');
-                    const translated = translateContent(content);
+                    const translated = await translateMarkdown(content);
                     const outPath = fullPath.replace('.md', '.zh-CN.md');
                     fs.writeFileSync(outPath, translated, 'utf8');
-                    console.log('✅', outPath);
+                    console.log('✅ Translated:', outPath);
                   } catch (err) {
                     console.error('Error processing', fullPath, err.message);
                   }
@@ -141,13 +198,17 @@ jobs:
               console.error('Error in processDir', dir, err.message);
             }
           }
-      
-          console.log('🚀 Starting translation...');
-          processDir('.');
+
+          console.log('🚀 Starting translation with Azure Translator API...');
+          console.log('Using Azure endpoint:', AZURE_ENDPOINT ? '✅ Configured' : '❌ Not configured');
+          await processDir('.');
           console.log('✅ Translation complete!');
           EOF
 
       - name: Run translation script
+        env:
+          AZURE_TRANSLATOR_KEY: ${{ secrets.AZURE_TRANSLATOR_KEY }}
+          AZURE_TRANSLATOR_ENDPOINT: ${{ secrets.AZURE_TRANSLATOR_ENDPOINT }}
         run: node scripts/translate.js
 
       - name: Check for generated files
@@ -164,11 +225,11 @@ jobs:
           body: |
             ## 自动翻译 - 中文文档
             
-            本 PR 包含自动生成的中文翻译。
+            本 PR 包含使用 Azure Translator API 自动生成的中文翻译。
             
             - ✅ README 文件已翻译
             - ✅ 课程材料已翻译
-            - ✅ 代码注释已增强
+            - ✅ 支持整句翻译
             
             请审核翻译的准确性。
           branch: translations/zh-CN
