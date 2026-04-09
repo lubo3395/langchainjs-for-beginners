@@ -53,12 +53,12 @@ jobs:
           };
 
           async function translateWithAzure(text) {
-            console.log('Calling Azure Translate...');
-            console.log('Endpoint:', AZURE_ENDPOINT);
-            console.log('Region:', AZURE_REGION);
+            console.log('正在调用 Azure 翻译...');
+            console.log('端点:', AZURE_ENDPOINT);
+            console.log('区域:', AZURE_REGION);
             return new Promise((resolve, reject) => {
               if (!AZURE_KEY || !AZURE_ENDPOINT) {
-                console.warn('⚠️ Azure credentials not found, using local dictionary');
+                console.warn('⚠️ 未找到 Azure 凭据，使用本地字典');
                 resolve(text);
                 return;
               }
@@ -82,7 +82,7 @@ jobs:
                   res.on('data', chunk => data += chunk);
                   res.on('end', () => {
                     try {
-                      console.log('Azure raw response:', data);
+                      console.log('Azure 原始响应:', data);
                       const result = JSON.parse(data);
                       if (result[0] && result[0].translations && result[0].translations[0]) {
                         resolve(result[0].translations[0].text);
@@ -90,14 +90,14 @@ jobs:
                         resolve(text);
                       }
                     } catch (err) {
-                      console.error('Failed to parse Azure response:', err.message);
+                      console.error('解析 Azure 响应失败:', err.message);
                       resolve(text);
                     }
                   });
                 });
 
                 req.on('error', (err) => {
-                  console.error('Azure API error:', err.message);
+                  console.error('Azure API 错误:', err.message);
                   // resolve(text);
                   reject(err); // 不要 resolve
                 });
@@ -105,7 +105,7 @@ jobs:
                 req.write(body);
                 req.end();
               } catch (err) {
-                console.error('Error calling Azure:', err.message);
+                console.error('调用 Azure 时发生错误:', err.message);
                 resolve(text);
               }
             });
@@ -155,7 +155,7 @@ jobs:
                 try {
                   translated = await translateWithAzure(para);
                 } catch (err) {
-                  console.warn('Azure translation failed, using local dictionary:', err.message);
+                  console.warn('Azure 翻译失败，使用本地字典:', err.message);
                   translated = translateWithLocalDict(para);
                 }
               } else {
@@ -190,38 +190,50 @@ jobs:
                   await processDir(fullPath);
                 } else if (file.endsWith('.md') && !file.endsWith('.zh-CN.md')) {
                   try {
-                    console.log('Processing:', fullPath);
+                    console.log('正在处理:', fullPath);
                     const content = fs.readFileSync(fullPath, 'utf8');
                     const translated = await translateMarkdown(content);
                     const outPath = fullPath.replace('.md', '.zh-CN.md');
                     fs.writeFileSync(outPath, translated, 'utf8');
-                    console.log('✅ Translated:', outPath);
+                    console.log('✅ 已翻译:', outPath);
                   } catch (err) {
-                    console.error('Error processing', fullPath, err.message);
+                    console.error('处理文件时出错', fullPath, err.message);
                   }
                 }
               }
             } catch (err) {
-              console.error('Error in processDir', dir, err.message);
+              console.error('遍历目录时出错', dir, err.message);
             }
           }
 
-          console.log('🚀 Starting translation with Azure Translator API...');
-          console.log('Using Azure endpoint:', AZURE_ENDPOINT ? '✅ Configured' : '❌ Not configured');
-          await processDir('.');
-          console.log('✅ Translation complete!');
+          console.log('🚀 开始使用 Azure 翻译 API 进行翻译...');
+          console.log('Azure 端点状态:', AZURE_ENDPOINT ? '✅ 已配置' : '❌ 未配置');
+
+          // 测试模式：仅翻译根目录 README.md
+          const testFile = './README.md';
+          if (fs.existsSync(testFile)) {
+            console.log('正在处理:', testFile);
+            const content = fs.readFileSync(testFile, 'utf8');
+            const translated = await translateMarkdown(content);
+            const outPath = testFile.replace(/\.md$/, '.zh-CN.md');
+            fs.writeFileSync(outPath, translated, 'utf8');
+            console.log('✅ 已翻译:', outPath);
+          } else {
+            console.warn('⚠️ 未找到 README.md');
+          }
+
+          console.log('✅ 翻译完成！');
           EOF
 
       - name: Debug env
         run: |
           echo "KEY length: ${#AZURE_TRANSLATOR_KEY}"
-          echo "ENDPOINT: $AZURE_TRANSLATOR_ENDPOINT"
     
       - name: Run translation script
         env:
           AZURE_TRANSLATOR_KEY: ${{ secrets.AZURE_TRANSLATOR_KEY }}
-          AZURE_TRANSLATOR_ENDPOINT: ${{ secrets.AZURE_TRANSLATOR_ENDPOINT }}
-          AZURE_TRANSLATOR_REGION: 'southeastasia' # 在这里明确指定区域
+          AZURE_TRANSLATOR_ENDPOINT: 'https://api.cognitive.microsofttranslator.com'
+          AZURE_TRANSLATOR_REGION: 'southeastasia'
         run: node scripts/translate.js
 
       - name: Check for generated files
